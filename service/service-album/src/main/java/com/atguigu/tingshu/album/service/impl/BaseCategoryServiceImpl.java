@@ -1,11 +1,9 @@
 package com.atguigu.tingshu.album.service.impl;
 
 import com.alibaba.fastjson.JSONObject;
-import com.atguigu.tingshu.album.mapper.BaseCategory1Mapper;
-import com.atguigu.tingshu.album.mapper.BaseCategory2Mapper;
-import com.atguigu.tingshu.album.mapper.BaseCategory3Mapper;
-import com.atguigu.tingshu.album.mapper.BaseCategoryViewMapper;
+import com.atguigu.tingshu.album.mapper.*;
 import com.atguigu.tingshu.album.service.BaseCategoryService;
+import com.atguigu.tingshu.model.album.BaseAttribute;
 import com.atguigu.tingshu.model.album.BaseCategory1;
 import com.atguigu.tingshu.model.album.BaseCategoryView;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -34,6 +32,9 @@ public class BaseCategoryServiceImpl extends ServiceImpl<BaseCategory1Mapper, Ba
     @Autowired
     private BaseCategoryViewMapper baseCategoryViewMapper;
 
+    @Autowired
+    private BaseAttributeMapper baseAttributeMapper;
+
 
     /**
      * 查询所有分类（1、2、3级分类）
@@ -41,7 +42,7 @@ public class BaseCategoryServiceImpl extends ServiceImpl<BaseCategory1Mapper, Ba
      * @return 业务数据：[{"categoryId":1,"categoryName":"分类",categoryChild:[..]},{其他1级分类}]
      */
     @Override
-    public List<JSONObject> gerBaseCategoryList() {
+    public List<JSONObject> getBaseCategoryList() {
         /*List<JSONObject> returnList = new ArrayList<>();
         List<BaseCategoryView> allCategoryList = baseCategoryViewMapper.selectList(null);
         Map<Long, List<BaseCategoryView>> category1Map = allCategoryList.stream().collect(Collectors.groupingBy(BaseCategoryView::getCategory1Id));
@@ -128,5 +129,19 @@ public class BaseCategoryServiceImpl extends ServiceImpl<BaseCategory1Mapper, Ba
         }
 
         return returnList;
+    }
+
+
+    /**
+     * 根据一级分类Id获取分类属性以及属性值（标签名，标签值）列表
+     *
+     * @param category1Id
+     * @return
+     */
+    @Override
+    public List<BaseAttribute> getAttributesByCategory1Id(Long category1Id) {
+        //1.获取持久层接口，调用持久层动态SQL
+        return baseAttributeMapper.getAttributesByCategory1Id(category1Id);
+
     }
 }
