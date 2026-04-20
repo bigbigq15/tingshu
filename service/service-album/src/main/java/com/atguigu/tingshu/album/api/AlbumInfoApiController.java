@@ -3,6 +3,7 @@ package com.atguigu.tingshu.album.api;
 import com.atguigu.tingshu.album.service.AlbumInfoService;
 import com.atguigu.tingshu.common.result.Result;
 import com.atguigu.tingshu.common.util.AuthContextHolder;
+import com.atguigu.tingshu.model.album.AlbumInfo;
 import com.atguigu.tingshu.vo.album.AlbumInfoVo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 
 @Tag(name = "专辑管理")
@@ -40,5 +43,16 @@ public class AlbumInfoApiController {
         //3.返回结果
         return Result.ok();
     }
+
+
+    public Result<List<AlbumInfo>> getUserAllAlbumList(){
+        //1.从ThreadLocal中获取当前登录用户ID
+        Long userId = AuthContextHolder.getUserId();
+        //2.调用业务逻辑获取专辑列表
+        List<AlbumInfo> list = albumInfoService.getUserAllAlbumList(userId);
+        return  Result.ok(list);
+    }
+
+
 }
 
