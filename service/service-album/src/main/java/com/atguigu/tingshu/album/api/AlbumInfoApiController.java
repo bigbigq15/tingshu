@@ -4,15 +4,16 @@ import com.atguigu.tingshu.album.service.AlbumInfoService;
 import com.atguigu.tingshu.common.result.Result;
 import com.atguigu.tingshu.common.util.AuthContextHolder;
 import com.atguigu.tingshu.model.album.AlbumInfo;
+import com.atguigu.tingshu.query.album.AlbumInfoQuery;
 import com.atguigu.tingshu.vo.album.AlbumInfoVo;
+import com.atguigu.tingshu.vo.album.AlbumListVo;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -41,6 +42,62 @@ public class AlbumInfoApiController {
         //2.调用service方法保存
         albumInfoService.saveAlbumInfo(albumInfoVo, userId);
         //3.返回结果
+        return Result.ok();
+    }
+
+    /**
+     * TODO 该接口必须登录才能访问
+     * 分页查询当前用户专辑列表
+     * @param page 页码
+     * @param limit 页大小
+     * @return 分页对象 列表中专辑信息（包含统计信息）
+     */
+    @Operation(summary = "分页查询当前用户专辑列表")
+    @PostMapping("/albumInfo/findUserAlbumPage/{page}/{limit}")
+    public Result<IPage<AlbumListVo>> findUserAlbumPageByUserId(@PathVariable Long page,
+                                                                @PathVariable Long limit,
+                                                                @RequestBody AlbumInfoQuery albumInfoQuery){
+        Long userId = AuthContextHolder.getUserId();
+
+        IPage<AlbumListVo> pageInfo = new Page<>(page, limit);
+        albumInfoQuery.setUserId(userId);
+        pageInfo = albumInfoService.findUserAlbumPageByUserId(pageInfo, albumInfoQuery);
+        return Result.ok(pageInfo);
+    }
+    /**
+     * 删除指定专辑
+     * @param id 专辑ID
+     * @return
+     */
+    @Operation(summary = "删除专辑")
+    @DeleteMapping("/albumInfo/removeAlbumInfo/{id}")
+    public Result removeAlbumInfo(@PathVariable Long id){
+        albumInfoService.removeAlbumInfo(id);
+        return Result.ok();
+    }
+    /**
+     * 查询专辑信息（包含标签列表）
+     * @param id
+     * @return
+     */
+    @Operation(summary = "查询专辑信息（包含标签列表）")
+    @GetMapping("/albumInfo/getAlbumInfo/{id}")
+    public Result<AlbumInfo> getAlbumInfo(@PathVariable Long id){
+        AlbumInfo albumInfo = albumInfoService.getAlbumInfo(id);
+        return Result.ok(albumInfo);
+    }
+
+
+    /**
+     * 修改专辑
+     * @param id 专辑ID
+     * @param albumInfoVo 修改专辑VO信息
+     * @return
+     */
+    @Operation(summary = "修改专辑")
+    @PutMapping("/albumInfo/updateAlbumInfo/{id}")
+    public Result updateAlbumInfo(@PathVariable Long id, @Validated @RequestBody AlbumInfoVo albumInfoVo){
+        albumInfoService.updateAlbumInfo(id,albumInfoVo);
         return Result.ok();
     }
 
