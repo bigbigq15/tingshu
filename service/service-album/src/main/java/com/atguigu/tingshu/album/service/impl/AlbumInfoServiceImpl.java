@@ -195,7 +195,7 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
     }
 
     @Override
-    public List<AlbumInfo> getUserAllAlbumList(Long userId) {
+    public List<AlbumInfo> findUserAllAlbumList(Long userId) {
         LambdaQueryWrapper<AlbumInfo> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(AlbumInfo::getUserId,userId);
         queryWrapper.orderByDesc(AlbumInfo::getId);

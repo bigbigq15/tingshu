@@ -102,11 +102,17 @@ public class AlbumInfoApiController {
     }
 
 
-    public Result<List<AlbumInfo>> getUserAllAlbumList(){
+    /**
+     * 查询当前用户发布专辑列表
+     * @return
+     */
+    @Operation(summary = "查询当前用户发布专辑列表")
+    @GetMapping("/albumInfo/findUserAllAlbumList")
+    public Result<List<AlbumInfo>> findUserAllAlbumList(){
         //1.从ThreadLocal中获取当前登录用户ID
         Long userId = AuthContextHolder.getUserId();
         //2.调用业务逻辑获取专辑列表
-        List<AlbumInfo> list = albumInfoService.getUserAllAlbumList(userId);
+        List<AlbumInfo> list = albumInfoService.findUserAllAlbumList(userId);
         return  Result.ok(list);
     }
 
