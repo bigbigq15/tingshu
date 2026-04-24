@@ -101,4 +101,21 @@ public class VodServiceImpl implements VodService {
             throw new RuntimeException(e);
         }
     }
+
+    /**
+     * 从点播平台删除音频文件
+     *
+     * @param mediaFileId
+     */
+    @Override
+    public void deleteMedia(String mediaFileId) {
+        try {
+            DeleteMediaRequest req = new DeleteMediaRequest();
+            req.setFileId(mediaFileId);
+            // 返回的resp是一个DeleteMediaResponse的实例，与请求对象对应
+            vodClient.DeleteMedia(req);
+        } catch (TencentCloudSDKException e) {
+            log.error("从点播平台删除音频文件异常", e);
+        }
+    }
 }

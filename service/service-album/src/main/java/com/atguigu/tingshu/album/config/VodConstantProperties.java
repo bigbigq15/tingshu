@@ -3,6 +3,8 @@ package com.atguigu.tingshu.album.config;
 
 import com.qcloud.vod.VodUploadClient;
 import com.tencentcloudapi.common.Credential;
+import com.tencentcloudapi.ims.v20201229.ImsClient;
+import com.tencentcloudapi.tms.v20201229.TmsClient;
 import com.tencentcloudapi.vod.v20180717.VodClient;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -45,5 +47,15 @@ public class VodConstantProperties {
     @Bean
     public VodClient vodClient() {
         return new VodClient(credential(), region);
+    }
+
+    @Bean
+    public TmsClient tmsClient() {
+        return new TmsClient(credential(), region);
+    }
+
+    @Bean
+    public ImsClient imsClient() {
+        return new ImsClient(credential(), region);
     }
 }

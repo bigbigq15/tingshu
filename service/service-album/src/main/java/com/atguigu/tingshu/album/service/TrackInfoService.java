@@ -5,13 +5,13 @@ import com.atguigu.tingshu.query.album.TrackInfoQuery;
 import com.atguigu.tingshu.vo.album.TrackInfoVo;
 import com.atguigu.tingshu.vo.album.TrackListVo;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
 public interface TrackInfoService extends IService<TrackInfo> {
-
     /**
      * 保存声音
      * @param trackInfoVo  声音信息vo
@@ -27,5 +27,25 @@ public interface TrackInfoService extends IService<TrackInfo> {
      */
     void saveTrackStat(Long trackId, String statType, int statNum);
 
+    /**
+     * 条件分页查询当前用户声音列表
+     * @param pageInfo 分页对象
+     * @param trackInfoQuery 查询条件
+     * @return 分页对象
+     */
     IPage<TrackListVo> findUserTrackPage(IPage<TrackListVo> pageInfo, TrackInfoQuery trackInfoQuery);
+
+    /**
+     * 修改声音信息
+     * @param id 声音Id
+     * @param trackInfoVo 声音信息VO
+     * @return
+     */
+    void updateTrackInfo(Long id, TrackInfoVo trackInfoVo);
+
+    /**
+     * 删除声音
+     * @param id 声音ID
+     */
+    void removeTrackInfo(Long id);
 }

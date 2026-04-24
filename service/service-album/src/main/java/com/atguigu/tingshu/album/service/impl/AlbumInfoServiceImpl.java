@@ -9,7 +9,10 @@ import com.atguigu.tingshu.album.mapper.TrackInfoMapper;
 import com.atguigu.tingshu.album.service.AlbumAttributeValueService;
 import com.atguigu.tingshu.album.service.AlbumInfoService;
 import com.atguigu.tingshu.album.service.AlbumStatService;
+import com.atguigu.tingshu.album.service.AuditService;
 import com.atguigu.tingshu.common.execption.GuiguException;
+import com.atguigu.tingshu.common.rabbit.constant.MqConst;
+import com.atguigu.tingshu.common.rabbit.service.RabbitService;
 import com.atguigu.tingshu.model.album.AlbumAttributeValue;
 import com.atguigu.tingshu.model.album.AlbumInfo;
 import com.atguigu.tingshu.model.album.AlbumStat;
@@ -33,6 +36,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.atguigu.tingshu.common.constant.SystemConstant.*;
+import static com.atguigu.tingshu.common.constant.SystemConstant.ALBUM_STATUS_ARTIFICIAL;
 import static com.atguigu.tingshu.common.result.ResultCodeEnum.ALBUM_NODE_ERROR;
 
 @Slf4j
@@ -58,6 +62,12 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
     @Autowired
     private AlbumStatService albumStatService;
 
+    @Autowired
+    private AuditService auditService;
+
+    @Autowired
+    private RabbitService rabbitService;
+
     /**
      * 保存专辑信息
      *
@@ -77,7 +87,7 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
         albumInfoMapper.insert(albumInfo);
         Long albumInfoId = albumInfo.getId();
         List<AlbumAttributeValueVo> albumAttributeValueVoList = albumInfoVo.getAlbumAttributeValueVoList();
-        if(CollUtil.isNotEmpty(albumAttributeValueVoList)){
+        if (CollUtil.isNotEmpty(albumAttributeValueVoList)) {
             List<AlbumAttributeValue> collect = albumAttributeValueVoList.stream().map(new Function<AlbumAttributeValueVo, AlbumAttributeValue>() {
                 @Override
                 public AlbumAttributeValue apply(AlbumAttributeValueVo albumAttributeValueVo) {
@@ -92,8 +102,20 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
         this.saveAlbumInfoStat(albumInfoId, ALBUM_STAT_SUBSCRIBE, 0);
         this.saveAlbumInfoStat(albumInfoId, ALBUM_STAT_BUY, 0);
         this.saveAlbumInfoStat(albumInfoId, ALBUM_STAT_COMMENT, 0);
-        //TODO,校验
 
+        // 4. 对新增专辑中文本：标题跟简介需要进行内容校验
+        String text = albumInfo.getAlbumTitle() + albumInfo.getAlbumIntro();
+        String suggest = auditService.auditText(text);
+        if ("block".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_NO_PASS);
+        } else if ("review".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_ARTIFICIAL);
+        } else if ("pass".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_PASS);
+            //采用RabbitMQ可靠性消息 异步方式
+            rabbitService.sendMessage(MqConst.EXCHANGE_ALBUM, MqConst.ROUTING_ALBUM_UPPER, albumInfoId);
+        }
+        albumInfoMapper.updateById(albumInfo);
     }
 
     /**
@@ -138,13 +160,14 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
             throw new GuiguException(ALBUM_NODE_ERROR);
         }
         albumInfoMapper.deleteById(id);
-        albumStatMapper.delete(new LambdaQueryWrapper<AlbumStat>().eq(AlbumStat::getAlbumId,id));
-        albumAttributeValueMapper.delete(new LambdaQueryWrapper<AlbumAttributeValue>().eq(AlbumAttributeValue::getAlbumId,id));
-        //TODO 同时将存在在ES索引库中专辑一并删除
+        albumStatMapper.delete(new LambdaQueryWrapper<AlbumStat>().eq(AlbumStat::getAlbumId, id));
+        albumAttributeValueMapper.delete(new LambdaQueryWrapper<AlbumAttributeValue>().eq(AlbumAttributeValue::getAlbumId, id));
+        rabbitService.sendMessage(MqConst.EXCHANGE_ALBUM, MqConst.ROUTING_ALBUM_LOWER, id);
     }
 
     /**
      * 查询专辑信息（包含标签列表）
+     *
      * @param id
      * @return
      */
@@ -152,7 +175,7 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
     public AlbumInfo getAlbumInfo(Long id) {
         AlbumInfo albumInfo = this.getById(id);
         List<AlbumAttributeValue> albumAttributeValueList = albumAttributeValueService.list(new LambdaQueryWrapper<AlbumAttributeValue>().eq(AlbumAttributeValue::getAlbumId, id));
-        if(CollUtil.isNotEmpty(albumAttributeValueList)){
+        if (CollUtil.isNotEmpty(albumAttributeValueList)) {
             albumInfo.setAlbumAttributeValueVoList(albumAttributeValueList);
         }
         return albumInfo;
@@ -160,7 +183,8 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
 
     /**
      * 修改专辑
-     * @param id 专辑ID
+     *
+     * @param id          专辑ID
      * @param albumInfoVo 修改专辑VO信息
      * @return
      */
@@ -172,12 +196,10 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
         albumInfo.setStatus(ALBUM_STATUS_NO_PASS);
         this.updateById(albumInfo);
 
-
-
-        albumAttributeValueService.remove(new LambdaQueryWrapper<AlbumAttributeValue>().eq(AlbumAttributeValue::getAlbumId,id));
+        albumAttributeValueService.remove(new LambdaQueryWrapper<AlbumAttributeValue>().eq(AlbumAttributeValue::getAlbumId, id));
 
         List<AlbumAttributeValueVo> albumAttributeValueVoList = albumInfoVo.getAlbumAttributeValueVoList();
-        if(CollUtil.isNotEmpty(albumAttributeValueVoList)){
+        if (CollUtil.isNotEmpty(albumAttributeValueVoList)) {
             List<AlbumAttributeValue> collect = albumAttributeValueVoList.stream().map(new Function<AlbumAttributeValueVo, AlbumAttributeValue>() {
                 @Override
                 public AlbumAttributeValue apply(AlbumAttributeValueVo albumAttributeValueVo) {
@@ -189,15 +211,29 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
             albumAttributeValueService.saveBatch(collect);
         }
 
-        //todo 验证新更改的文本
-        albumInfoMapper.update(albumInfo,new LambdaQueryWrapper<AlbumInfo>().eq(AlbumInfo::getId,id));
+        // 验证新更改的文本
+        String text = albumInfo.getAlbumTitle() + albumInfo.getAlbumIntro();
+        String suggest = auditService.auditText(text);
+        if ("block".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_NO_PASS);
+        } else if ("review".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_ARTIFICIAL);
+        } else if ("pass".equals(suggest)) {
+            albumInfo.setStatus(ALBUM_STATUS_PASS);
+        }
+        albumInfoMapper.update(albumInfo, new LambdaQueryWrapper<AlbumInfo>().eq(AlbumInfo::getId, id));
 
     }
 
+    /**
+     * 查询当前用户发布专辑列表
+     * @param userId
+     * @return
+     */
     @Override
     public List<AlbumInfo> findUserAllAlbumList(Long userId) {
         LambdaQueryWrapper<AlbumInfo> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(AlbumInfo::getUserId,userId);
+        queryWrapper.eq(AlbumInfo::getUserId, userId);
         queryWrapper.orderByDesc(AlbumInfo::getId);
         queryWrapper.last("LIMIT 200");
         queryWrapper.select(AlbumInfo::getId, AlbumInfo::getAlbumTitle);

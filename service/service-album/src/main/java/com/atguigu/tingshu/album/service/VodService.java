@@ -21,4 +21,10 @@ public interface VodService {
      */
     TrackMediaInfoVo getMediaInfo(String mediaFileId);
 
+    /**
+     * 从点播平台删除音频文件
+     * @param oldMediaFileId
+     */
+    void deleteMedia(String oldMediaFileId);
+
 }

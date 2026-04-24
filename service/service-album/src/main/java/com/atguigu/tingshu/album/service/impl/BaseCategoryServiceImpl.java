@@ -127,7 +127,6 @@ public class BaseCategoryServiceImpl extends ServiceImpl<BaseCategory1Mapper, Ba
             jsonObject1.put("categoryChild", jsonObject2List);
             returnList.add(jsonObject1);
         }
-
         return returnList;
     }
 
@@ -139,9 +138,18 @@ public class BaseCategoryServiceImpl extends ServiceImpl<BaseCategory1Mapper, Ba
      * @return
      */
     @Override
-    public List<BaseAttribute> getAttributesByCategory1Id(Long category1Id) {
+    public List<BaseAttribute> findAttribute(Long category1Id) {
         //1.获取持久层接口，调用持久层动态SQL
         return baseAttributeMapper.getAttributesByCategory1Id(category1Id);
+    }
 
+    /**
+     * 根据3级分类ID查询分类视图对象
+     * @param category3Id
+     * @return
+     */
+    @Override
+    public BaseCategoryView getCategoryView(Long category3Id) {
+        return baseCategoryViewMapper.selectById(category3Id);
     }
 }
