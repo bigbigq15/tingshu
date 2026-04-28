@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.atguigu.tingshu.album.service.BaseCategoryService;
 import com.atguigu.tingshu.common.result.Result;
 import com.atguigu.tingshu.model.album.BaseAttribute;
+import com.atguigu.tingshu.model.album.BaseCategory3;
 import com.atguigu.tingshu.model.album.BaseCategoryView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -61,5 +62,32 @@ public class BaseCategoryApiController {
         BaseCategoryView baseCategoryView = baseCategoryService.getCategoryView(category3Id);
         return Result.ok(baseCategoryView);
     }
+
+    /**
+     * TODO 后续使用Redis缓存
+     * 根据1级分类ID查询置顶前七个三级分类列表
+     * @param category1Id 1级分类ID
+     * @return 三级分类列表
+     */
+    @Operation(summary = "根据1级分类ID查询置顶前七个三级分类列表")
+    @GetMapping("/category/findTopBaseCategory3/{category1Id}")
+    public Result<List<BaseCategory3>> findTop7BaseCategory3(@PathVariable Long category1Id){
+        List<BaseCategory3> list = baseCategoryService.findTop7BaseCategory3(category1Id);
+        return Result.ok(list);
+    }
+
+    /**
+     * TODO 后续使用Redis缓存
+     * 查询1级分类下包含所有2,3级分类列表
+     * @param category1Id
+     * @return 1级分类对象 包含2,3级分类列表
+     */
+    @Operation(summary = "查询1级分类下包含所有2,3级分类列表")
+    @GetMapping("/category/getBaseCategoryList/{category1Id}")
+    public Result<JSONObject> getBaseCategoryListByCategory1Id(@PathVariable Long category1Id){
+        JSONObject jsonObject = baseCategoryService.getBaseCategoryListByCategory1Id(category1Id);
+        return Result.ok(jsonObject);
+    }
+
 }
 

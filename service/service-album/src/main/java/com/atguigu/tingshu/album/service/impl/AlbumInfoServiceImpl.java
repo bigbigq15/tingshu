@@ -21,6 +21,7 @@ import com.atguigu.tingshu.query.album.AlbumInfoQuery;
 import com.atguigu.tingshu.vo.album.AlbumAttributeValueVo;
 import com.atguigu.tingshu.vo.album.AlbumInfoVo;
 import com.atguigu.tingshu.vo.album.AlbumListVo;
+import com.atguigu.tingshu.vo.album.AlbumStatVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -67,6 +68,7 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
 
     @Autowired
     private RabbitService rabbitService;
+
 
     /**
      * 保存专辑信息
@@ -220,6 +222,7 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
             albumInfo.setStatus(ALBUM_STATUS_ARTIFICIAL);
         } else if ("pass".equals(suggest)) {
             albumInfo.setStatus(ALBUM_STATUS_PASS);
+            rabbitService.sendMessage(MqConst.EXCHANGE_ALBUM, MqConst.ROUTING_ALBUM_UPPER, id);
         }
         albumInfoMapper.update(albumInfo, new LambdaQueryWrapper<AlbumInfo>().eq(AlbumInfo::getId, id));
 
@@ -238,5 +241,11 @@ public class AlbumInfoServiceImpl extends ServiceImpl<AlbumInfoMapper, AlbumInfo
         queryWrapper.last("LIMIT 200");
         queryWrapper.select(AlbumInfo::getId, AlbumInfo::getAlbumTitle);
         return albumInfoMapper.selectList(queryWrapper);
+    }
+
+    @Override
+    public AlbumStatVo getAlbumStatVo(Long albumId) {
+        AlbumStatVo albumStatVo = albumInfoMapper.getAlbumStatVo(albumId);
+        return albumStatVo;
     }
 }
