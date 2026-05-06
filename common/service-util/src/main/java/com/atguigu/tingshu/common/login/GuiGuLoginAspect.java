@@ -53,11 +53,11 @@ public class GuiGuLoginAspect {
         UserInfoVo userInfoVo = (UserInfoVo) redisTemplate.opsForValue().get(loginKey);
 
         //3.如果用户信息为空且目标方法要求必须登录 抛出异常：业务状态码设置208 前端引导用户跳转登录页
-        if(userInfoVo==null && guiGuLogin.required()){
+        if (userInfoVo == null && guiGuLogin.required()) {
             throw new GuiguException(ResultCodeEnum.LOGIN_AUTH);
         }
         //4.如果用户信息有值，将用户ID存入ThreadLocal，方便在javaEE三层controller，service，Mapper获取用户ID
-        if(userInfoVo!=null){
+        if (userInfoVo != null) {
             AuthContextHolder.setUserId(userInfoVo.getId());
         }
 
@@ -70,6 +70,5 @@ public class GuiGuLoginAspect {
         AuthContextHolder.removeUserId();
         //7.响应结果
         return retVal;
-
     }
 }

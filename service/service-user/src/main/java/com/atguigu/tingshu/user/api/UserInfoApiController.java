@@ -1,15 +1,17 @@
 package com.atguigu.tingshu.user.api;
 
+import com.atguigu.tingshu.common.login.GuiGuLogin;
 import com.atguigu.tingshu.common.result.Result;
+import com.atguigu.tingshu.common.util.AuthContextHolder;
 import com.atguigu.tingshu.user.service.UserInfoService;
 import com.atguigu.tingshu.vo.user.UserInfoVo;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
 
 @Tag(name = "用户管理接口")
 @RestController
@@ -30,6 +32,59 @@ public class UserInfoApiController {
 	public Result<UserInfoVo> getUserInfoVo(@PathVariable Long userId){
 		UserInfoVo userInfo = userInfoService.getUserInfo(userId);
 		return Result.ok(userInfo);
+	}
+
+	/**
+	 * 提交需要检查购买状态声音ID列表，响应每个声音购买状态
+	 * @param userId
+	 * @param albumId
+	 * @param needCheckPayStatusTrackIdList 待检查购买状态声音ID列表
+	 * @return
+	 */
+	@Operation(summary = "提交需要检查购买状态声音ID列表，响应每个声音购买状态")
+	@PostMapping("/userInfo/userIsPaidTrack/{userId}/{albumId}")
+	public Result<Map<Long, Integer>> userIsPaidTrack(
+			@PathVariable Long userId,
+			@PathVariable Long albumId,
+			@RequestBody List<Long> needCheckPayStatusTrackIdList
+	) {
+		Map<Long, Integer> map = userInfoService.userIsPaidTrack(userId, albumId, needCheckPayStatusTrackIdList);
+		return Result.ok(map);
+	}
+
+	/**
+	 * 为了获取当前用户ID，确保调用方请求头比如有：token
+	 * 判断当前用户是否购买指定专辑
+	 * @param albumId
+	 * @return 购买状态：true:已购买专辑、 false:未购买专辑
+	 */
+	@GuiGuLogin  //
+	@Operation(summary = "判断当前用户是否购买指定专辑")
+	@GetMapping("/userInfo/isPaidAlbum/{albumId}")
+	public Result<Boolean> isPaidAlbum(@PathVariable Long albumId){
+		//1.获取当前用户ID
+		Long userId = AuthContextHolder.getUserId();
+		//2.调用业务
+		Boolean isPaid = userInfoService.isPaidAlbum(userId, albumId);
+		//3.响应结果
+		return Result.ok(isPaid);
+	}
+
+	/**
+	 * 根据专辑id+用户ID获取用户已购买声音id列表
+	 * @param albumId
+	 * @return
+	 */
+	@GuiGuLogin
+	@Operation(summary = "根据专辑id+用户ID获取用户已购买声音id列表")
+	@GetMapping("/userInfo/findUserPaidTrackList/{albumId}")
+	public Result<List<Long>> findUserPaidTrackIdList(@PathVariable Long albumId){
+		//1.获取当前用户ID
+		Long userId = AuthContextHolder.getUserId();
+		//2.调用业务
+		List<Long> list = userInfoService.findUserPaidTrackIdList(userId, albumId);
+		//3.响应结果
+		return Result.ok(list);
 	}
 
 }

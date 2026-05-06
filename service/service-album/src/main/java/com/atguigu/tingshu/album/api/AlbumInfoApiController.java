@@ -1,6 +1,7 @@
 package com.atguigu.tingshu.album.api;
 
 import com.atguigu.tingshu.album.service.AlbumInfoService;
+import com.atguigu.tingshu.album.service.TrackInfoService;
 import com.atguigu.tingshu.common.login.GuiGuLogin;
 import com.atguigu.tingshu.common.result.Result;
 import com.atguigu.tingshu.common.util.AuthContextHolder;
@@ -9,6 +10,7 @@ import com.atguigu.tingshu.query.album.AlbumInfoQuery;
 import com.atguigu.tingshu.vo.album.AlbumInfoVo;
 import com.atguigu.tingshu.vo.album.AlbumListVo;
 import com.atguigu.tingshu.vo.album.AlbumStatVo;
+import com.atguigu.tingshu.vo.album.AlbumTrackListVo;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +30,10 @@ public class AlbumInfoApiController {
 
     @Autowired
     private AlbumInfoService albumInfoService;
+
+    @Autowired
+    private TrackInfoService trackInfoService;
+
 
     /**
      * 参数校验框架：@Validated 对请求体中VO中使用校验注解属性进行校验，底层基于AOP（前置通知）调用controller之前就会校验
@@ -138,6 +144,26 @@ public class AlbumInfoApiController {
         AlbumStatVo albumStatVo = albumInfoService.getAlbumStatVo(albumId);
         return Result.ok(albumStatVo);
     }
+
+    @GuiGuLogin(required = false)
+    @Operation(summary = "分页查询专辑下声音列表（动态渲染付费标识）")
+    @GetMapping("/trackInfo/findAlbumTrackPage/{albumId}/{page}/{limit}")
+    public Result<IPage<AlbumTrackListVo>> findAlbumTrackPage(
+            @PathVariable Long albumId,
+            @PathVariable Long page,
+            @PathVariable Long limit) {
+        //1.尝试获取用户ID
+        Long userId = AuthContextHolder.getUserId();
+        //2.构建分页对象：封装当前页码、每页记录数
+        IPage<AlbumTrackListVo> pageInfo = new Page<>(page, limit);
+
+        //3.调用业务逻辑层->持久层：封装：总记录数，总页数，当前页数据
+        pageInfo = trackInfoService.findAlbumTrackPage(pageInfo, albumId, userId);
+
+        //4.响应分页对象
+        return Result.ok(pageInfo);
+    }
+
 
 }
 
