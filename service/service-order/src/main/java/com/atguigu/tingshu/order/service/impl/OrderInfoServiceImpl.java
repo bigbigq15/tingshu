@@ -1,8 +1,11 @@
 package com.atguigu.tingshu.order.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.lang.Assert;
 import cn.hutool.core.util.IdUtil;
+import com.atguigu.tingshu.account.AccountFeignClient;
 import com.atguigu.tingshu.album.AlbumFeignClient;
 import com.atguigu.tingshu.common.constant.RedisConstant;
 import com.atguigu.tingshu.common.constant.SystemConstant;
@@ -10,29 +13,33 @@ import com.atguigu.tingshu.common.execption.GuiguException;
 import com.atguigu.tingshu.common.result.Result;
 import com.atguigu.tingshu.model.album.AlbumInfo;
 import com.atguigu.tingshu.model.album.TrackInfo;
+import com.atguigu.tingshu.model.order.OrderDerate;
+import com.atguigu.tingshu.model.order.OrderDetail;
 import com.atguigu.tingshu.model.order.OrderInfo;
 import com.atguigu.tingshu.model.user.VipServiceConfig;
 import com.atguigu.tingshu.order.helper.SignHelper;
 import com.atguigu.tingshu.order.mapper.OrderInfoMapper;
+import com.atguigu.tingshu.order.service.OrderDerateService;
+import com.atguigu.tingshu.order.service.OrderDetailService;
 import com.atguigu.tingshu.order.service.OrderInfoService;
 import com.atguigu.tingshu.user.client.UserFeignClient;
+import com.atguigu.tingshu.vo.account.AccountDeductVo;
 import com.atguigu.tingshu.vo.order.OrderDerateVo;
 import com.atguigu.tingshu.vo.order.OrderDetailVo;
 import com.atguigu.tingshu.vo.order.OrderInfoVo;
 import com.atguigu.tingshu.vo.order.TradeVo;
 import com.atguigu.tingshu.vo.user.UserInfoVo;
+import com.atguigu.tingshu.vo.user.UserPaidRecordVo;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -55,6 +62,15 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
     @Autowired
     private RedisTemplate redisTemplate;
 
+    @Autowired
+    private OrderDetailService orderDetailService;
+
+    @Autowired
+    private OrderDerateService orderDerateService;
+
+    @Autowired
+    private AccountFeignClient accountFeignClient;
+
     /**
      * 订单结算（会员套餐、专辑、声音）
      *
@@ -63,6 +79,7 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
      */
     @Override
     public OrderInfoVo trade(Long userId, TradeVo tradeVo) {
+        //todo 未完成的任务,优化
         //1.初始化VO对象 以及价格相关属性、商品相关集合属性
         OrderInfoVo orderInfoVo = new OrderInfoVo();
         //1.1 声明三个价格 "0.00"
@@ -156,7 +173,7 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
                 orderDerateVo.setRemarks("专辑限时优惠");
                 orderDerateVoList.add(orderDerateVo);
             }
-        }else if (ORDER_ITEM_TYPE_TRACK.equals(itemType)){
+        } else if (ORDER_ITEM_TYPE_TRACK.equals(itemType)) {
             //4. 处理项目类型是：声音
             //4.1 远程调用"专辑服务"获取待购买声音列表，将声音作为商品展示结算页
             Long trackId = tradeVo.getItemId();
@@ -212,4 +229,129 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
 
     }
 
+    @Override
+    public Map<String, String> submitOrder(Long userId, OrderInfoVo orderInfoVo) {
+        //1.业务校验，验证流水号防止订单重提交 采用lua脚本保证判断跟删除原子性
+        //1.1 定义key
+        String tradeKey = RedisConstant.ORDER_TRADE_NO_PREFIX + userId;
+        //1.2 创建脚本对象
+        String scriptText = "if redis.call(\"get\",KEYS[1]) == ARGV[1]\n" +
+                "then\n" +
+                "    return redis.call(\"del\",KEYS[1])\n" +
+                "else\n" +
+                "    return 0\n" +
+                "end";
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>(scriptText, Long.class);
+        //1.3 执行lua脚本 传入需要KEYS 跟 AEGV 值
+        Long result = (Long) redisTemplate.execute(redisScript, Arrays.asList(tradeKey), orderInfoVo.getTradeNo());
+        if (result.intValue() == 0) {
+            throw new GuiguException(500, "流水号校验失败");
+        }
+        //2.业务校验，验证签名防止数据被篡改 在结算订单接口中payWay吧并未参与签名，此时前端选择付款方式，故验签将"payWay"去掉
+        //2.1 将订单VO转为Map 手动移除掉"payWay"
+        Map<String, Object> map = BeanUtil.beanToMap(orderInfoVo);
+        map.remove("payWay");
+        //2.2 调用工具类验签
+        SignHelper.checkSign(map);
+        //TODO 核心订单业务处理逻辑
+        //3.保存订单相关数据（包括：订单、订单明细、优惠列表） 此时保存订单状态：未支付
+        OrderInfo orderInfo = this.saveOrderInfo(userId, orderInfoVo);
+
+        //4.如果支付方式为余额支付 立即扣减账户余额、余额扣减修改订单状态：已支付 并且发放权益
+        //支付方式：1101-微信 1102-支付宝 1103-账户余额
+        String payWay = orderInfoVo.getPayWay();
+        if (ORDER_PAY_ACCOUNT.equals(payWay)){
+            //4.1 远程调用"账户服务"扣减账户余额
+            //4.1.1 准备扣减余额vo参数
+            AccountDeductVo vo = new AccountDeductVo();
+            vo.setOrderNo(orderInfo.getOrderNo());
+            vo.setUserId(orderInfo.getUserId());
+            vo.setAmount(orderInfo.getOrderAmount());
+            vo.setContent(orderInfo.getOrderTitle());
+            //4.1.2 执行远程调用调用
+            Result checkAndDeductResult = accountFeignClient.checkAndDeduct(vo);
+            //4.1.3 判断业务状态码是否为200
+            if (checkAndDeductResult.getCode().intValue() != 200){
+                throw new GuiguException(checkAndDeductResult.getCode(), checkAndDeductResult.getMessage());
+            }
+            //4.2 余额扣减成功，将订单状态改为：已支付
+            orderInfo.setOrderStatus(ORDER_STATUS_PAID);
+            orderInfoMapper.updateById(orderInfo);
+
+            //4.3 远程调用"用户服务"进行相关权益发放（虚拟物品发货）
+            //4.3.1 创建用于虚拟物品发货vo对象
+            UserPaidRecordVo userPaidRecordVo = new UserPaidRecordVo();
+            userPaidRecordVo.setOrderNo(orderInfo.getOrderNo());
+            userPaidRecordVo.setUserId(orderInfo.getUserId());
+            userPaidRecordVo.setItemType(orderInfo.getItemType());
+            List<OrderDetailVo> orderDetailVoList = orderInfoVo.getOrderDetailVoList();
+            if (CollUtil.isNotEmpty(orderDetailVoList)) {
+                //获取订单明细中商品ID列表
+                List<Long> itemIdList = orderDetailVoList.stream().map(OrderDetailVo::getItemId).collect(Collectors.toList());
+                userPaidRecordVo.setItemIdList(itemIdList);
+                //4.3.2 执行远程调用
+                Result savePaidRecordResult = userFeignClient.savePaidRecord(userPaidRecordVo);
+                if (savePaidRecordResult.getCode().intValue() != 200){
+                    throw new GuiguException(savePaidRecordResult.getCode(), savePaidRecordResult.getMessage());
+                }
+            }
+        }
+        //5.TODO 无论是哪种付款方式，采用延迟消息自动将超时未支付订单取消掉
+
+        //6.返回本次订单订单编号，用于后续支付成功后查询订单、或者基于订单编号对接微信支付
+        return Map.of("orderNo", orderInfo.getOrderNo());
+
+    }
+
+    /**
+     * 保存订单信息
+     *
+     * @param userId      用户ID
+     * @param orderInfoVo 订单VO信息
+     * @return 订单对象
+     */
+    @Override
+    public OrderInfo saveOrderInfo(Long userId, OrderInfoVo orderInfoVo) {
+        OrderInfo orderInfo = BeanUtil.copyProperties(orderInfoVo, OrderInfo.class);
+        //1.2 设置用户ID
+        orderInfo.setUserId(userId);
+        //1.3 设置订单标题
+        List<OrderDetailVo> orderDetailVoList = orderInfoVo.getOrderDetailVoList();
+        if (CollUtil.isNotEmpty(orderDetailVoList)) {
+            String itemName = orderDetailVoList.get(0).getItemName();
+            orderInfo.setOrderTitle(itemName);
+        }
+        //1.4 设置订单编号 要求：全局唯一趋势递增 形式=日期+雪花算法
+        String orderNo = DateUtil.today().replaceAll("-", "") + IdUtil.getSnowflakeNextId();
+        orderInfo.setOrderNo(orderNo);
+        //1.2 设置订单状态：订单状态：0901-未支付 0902-已支付 0903-已取消
+        orderInfo.setOrderStatus(ORDER_STATUS_UNPAID);
+        //1.3 保存订单信息 得到订单ID
+        orderInfoMapper.insert(orderInfo);
+        Long orderId = orderInfo.getId();
+
+        //2.保存订单明细信息
+        if (CollUtil.isNotEmpty(orderDetailVoList)) {
+            List<OrderDetail> orderDetailList = orderDetailVoList.stream().map(vo -> {
+                OrderDetail orderDetail = BeanUtil.copyProperties(vo, OrderDetail.class);
+                orderDetail.setOrderId(orderId);
+                return orderDetail;
+            }).collect(Collectors.toList());
+            orderDetailService.saveBatch(orderDetailList);
+        }
+
+        //3.保存订单减免信息
+        List<OrderDerateVo> orderDerateVoList = orderInfoVo.getOrderDerateVoList();
+        if (CollUtil.isNotEmpty(orderDetailVoList)) {
+            List<OrderDerate> orderDerateList = orderDerateVoList
+                    .stream()
+                    .map(vo -> {
+                        OrderDerate orderDerate = BeanUtil.copyProperties(vo, OrderDerate.class);
+                        orderDerate.setOrderId(orderId);
+                        return orderDerate;
+                    }).collect(Collectors.toList());
+            orderDerateService.saveBatch(orderDerateList);
+        }
+        return orderInfo;
+    }
 }

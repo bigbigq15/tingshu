@@ -23,8 +23,7 @@ public class SearchApiController {
     @Autowired
     private SearchService searchService;
 
-    @Autowired
-    private ItemService itemService;
+
 
     /**
      * 手动上架指定专辑到索引库
@@ -77,20 +76,6 @@ public class SearchApiController {
     public Result<List<Map<String, Object>>> channel(@PathVariable Long category1Id) {
         List<Map<String, Object>> list = searchService.channel(category1Id);
         return Result.ok(list);
-    }
-
-
-    /**
-     * 根据专辑ID汇总详情页所需参数
-     *
-     * @param albumId
-     * @return
-     */
-    @Operation(summary = "根据专辑ID汇总详情页所需参数")
-    @GetMapping("/albumInfo/{albumId}")
-    public Result<Map<String, Object>> getItem(@PathVariable Long albumId) {
-        Map<String, Object> map = itemService.getItem(albumId);
-        return Result.ok(map);
     }
 
 }

@@ -4,27 +4,34 @@ import cn.binarywang.wx.miniapp.api.WxMaService;
 import cn.binarywang.wx.miniapp.bean.WxMaJscode2SessionResult;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.date.DateTime;
+import cn.hutool.core.date.DateUtil;
 import cn.hutool.core.util.IdUtil;
+import com.atguigu.tingshu.album.AlbumFeignClient;
 import com.atguigu.tingshu.common.constant.RedisConstant;
+import com.atguigu.tingshu.common.constant.SystemConstant;
 import com.atguigu.tingshu.common.rabbit.constant.MqConst;
 import com.atguigu.tingshu.common.rabbit.service.RabbitService;
-import com.atguigu.tingshu.model.user.UserInfo;
-import com.atguigu.tingshu.model.user.UserPaidAlbum;
-import com.atguigu.tingshu.model.user.UserPaidTrack;
-import com.atguigu.tingshu.user.mapper.UserInfoMapper;
-import com.atguigu.tingshu.user.mapper.UserPaidAlbumMapper;
-import com.atguigu.tingshu.user.mapper.UserPaidTrackMapper;
+import com.atguigu.tingshu.model.album.TrackInfo;
+import com.atguigu.tingshu.model.user.*;
+import com.atguigu.tingshu.user.client.UserFeignClient;
+import com.atguigu.tingshu.user.mapper.*;
+import com.atguigu.tingshu.user.pattern.DeliveryStrategy;
+import com.atguigu.tingshu.user.pattern.factory.DeliveryStrategyFactory;
 import com.atguigu.tingshu.user.service.UserInfoService;
 import com.atguigu.tingshu.vo.user.UserInfoVo;
+import com.atguigu.tingshu.vo.user.UserPaidRecordVo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 import me.chanjar.weixin.common.error.WxErrorException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +61,20 @@ public class UserInfoServiceImpl extends ServiceImpl<UserInfoMapper, UserInfo> i
     @Autowired
     private UserPaidAlbumMapper userPaidAlbumMapper;
 
+    @Autowired
+    private AlbumFeignClient albumFeignClient;
+
+    @Autowired
+    private UserFeignClient userFeignClient;
+
+    @Autowired
+    private VipServiceConfigMapper vipServiceConfigMapper;
+
+    @Autowired
+    private UserVipServiceMapper userVipServiceMapper;
+
+    @Autowired
+    private DeliveryStrategyFactory factory;
 
     /**
      * 微信小程序一键登录
@@ -153,7 +174,7 @@ public class UserInfoServiceImpl extends ServiceImpl<UserInfoMapper, UserInfo> i
                         .eq(UserPaidAlbum::getAlbumId, albumId)
         );
         //2. 如果已购买专辑，将所有待检查购买状态声音 购买状态设置为 1 响应
-        if (count > 0){
+        if (count > 0) {
             for (Long trackId : needCheckPayStatusTrackIdList) {
                 map.put(trackId, 1);
             }
@@ -167,7 +188,7 @@ public class UserInfoServiceImpl extends ServiceImpl<UserInfoMapper, UserInfo> i
                         .select(UserPaidTrack::getTrackId)
         );
         //4. 如果不存再已购声音，将所有待检查购买状态声音 购买状态设置为 0 响应
-        if(CollUtil.isEmpty(userPaidTrackList)){
+        if (CollUtil.isEmpty(userPaidTrackList)) {
             for (Long trackId : needCheckPayStatusTrackIdList) {
                 map.put(trackId, 0);
             }
@@ -222,5 +243,68 @@ public class UserInfoServiceImpl extends ServiceImpl<UserInfoMapper, UserInfo> i
             return paidTrackIdList;
         }
         return List.of();
+    }
+
+    @Override
+    public void savePaidRecord(UserPaidRecordVo userPaidRecordVo) {
+        //项目类型: 1001-专辑 1002-声音 1003-vip会员
+        String itemType = userPaidRecordVo.getItemType();
+        DeliveryStrategy deliveryStrategy = factory.getDeliveryStrategy(itemType);
+        deliveryStrategy.delivery(userPaidRecordVo);
+
+        /*Long count = userPaidAlbumMapper.selectCount(new LambdaQueryWrapper<UserPaidAlbum>()
+                .eq(UserPaidAlbum::getOrderNo, userPaidRecordVo.getOrderNo()));
+
+        if (count == 0) {
+            if (SystemConstant.ORDER_ITEM_TYPE_ALBUM.equals(itemType)) {
+                UserPaidAlbum userPaidAlbum = new UserPaidAlbum();
+                userPaidAlbum.setOrderNo(userPaidRecordVo.getOrderNo());
+                userPaidAlbum.setUserId(userPaidRecordVo.getUserId());
+                userPaidAlbum.setAlbumId(userPaidRecordVo.getItemIdList().get(0));
+                userPaidAlbumMapper.insert(userPaidAlbum);
+            } else if (SystemConstant.ORDER_ITEM_TYPE_TRACK.equals(itemType)) {
+                List<Long> itemIdList = userPaidRecordVo.getItemIdList();
+                TrackInfo trackInfo = albumFeignClient.getTrackInfo(itemIdList.get(0)).getData();
+                Long albumId = trackInfo.getAlbumId();
+                for (Long trackId : itemIdList) {
+                    UserPaidTrack userPaidTrack = new UserPaidTrack();
+                    userPaidTrack.setOrderNo(userPaidRecordVo.getOrderNo());
+                    userPaidTrack.setUserId(userPaidRecordVo.getUserId());
+                    userPaidTrack.setAlbumId(albumId);
+                    userPaidTrack.setTrackId(trackId);
+                    userPaidTrackMapper.insert(userPaidTrack);
+                }
+            }else if(SystemConstant.ORDER_ITEM_TYPE_VIP.equals(itemType)){
+                Boolean isVIP = false;
+                UserInfoVo userInfoVo = userFeignClient.getUserInfoVo(userPaidRecordVo.getUserId()).getData();
+                Integer isVip = userInfoVo.getIsVip();
+                if(userInfoVo.getIsVip().intValue() == 1 && userInfoVo.getVipExpireTime().after(new Date())){
+                    isVIP = true;
+                }
+                UserVipService userVipService = new UserVipService();
+                userVipService.setOrderNo(userPaidRecordVo.getOrderNo());
+                userVipService.setUserId(userPaidRecordVo.getUserId());
+                VipServiceConfig vipServiceConfig = vipServiceConfigMapper.selectById(userPaidRecordVo.getItemIdList().get(0));
+                Integer serviceMonth = vipServiceConfig.getServiceMonth();
+                if(isVIP){
+                    DateTime startTime = DateUtil.offsetDay(userInfoVo.getVipExpireTime(), 1);
+                    userVipService.setStartTime(startTime);
+                    userVipService.setExpireTime(DateUtil.offsetMonth(startTime, serviceMonth));
+                }else{
+                    userVipService.setStartTime(new Date());
+                    userVipService.setExpireTime(DateUtil.offsetMonth(new Date(), serviceMonth));
+                }
+                //userVipService.setIsAutoRenew();
+                //userVipService.setNextRenewTime();
+                userVipServiceMapper.insert(userVipService);
+
+                UserInfo userInfo = new UserInfo();
+                userInfo.setId(userPaidRecordVo.getUserId());
+                userInfo.setIsVip(1);
+                userInfo.setVipExpireTime(userVipService.getExpireTime());
+                userInfoMapper.updateById(userInfo);
+            }
+        }*/
+
     }
 }
